@@ -5,5 +5,6 @@ public class Prova {
 
     static void main(){
 
+        int x;
     }
 }
