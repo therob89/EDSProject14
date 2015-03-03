@@ -25,5 +25,8 @@
         <module name="EDSProject" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="EDSProject" target="1.6" />
+    </bytecodeTargetLevel>
   </component>
 </project>
