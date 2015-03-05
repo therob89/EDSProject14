@@ -39,9 +39,12 @@ public class TridentWordCount {
     }
 
     public static StormTopology buildTopology(LocalDRPC drpc) {
-        FixedBatchSpout spout = new FixedBatchSpout(new Fields("sentence"), 3, new Values("the cow jumped over the moon"),
-                new Values("the man went to the store and bought some candy"), new Values("four score and seven years ago"),
-                new Values("how many apples can you eat"), new Values("to be or not to be the person"));
+        FixedBatchSpout spout = new FixedBatchSpout(new Fields("sentence"), 3,
+                new Values("the cow jumped over the moon"),
+                new Values("the man went to the store and bought some candy"),
+                new Values("four score and seven years ago"),
+                new Values("how many apples can you eat"),
+                new Values("to be or not to be the person"));
         spout.setCycle(true);
 
         TridentTopology topology = new TridentTopology();
