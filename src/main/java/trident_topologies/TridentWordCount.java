@@ -48,9 +48,9 @@ public class TridentWordCount {
         spout.setCycle(true);
 
         TridentTopology topology = new TridentTopology();
-        TridentState wordCounts = topology.newStream("spout1", spout).parallelismHint(16).each(new Fields("sentence"),
-                new Split(), new Fields("word")).groupBy(new Fields("word")).persistentAggregate(new MemoryMapState.Factory(),
-                new Count(), new Fields("count")).parallelismHint(16);
+        TridentState wordCounts = topology.newStream("spout1", spout)
+                .parallelismHint(16).each(new Fields("sentence"), new Split(), new Fields("word")).groupBy(new Fields("word"))
+                .persistentAggregate(new MemoryMapState.Factory(), new Count(), new Fields("count")).parallelismHint(16);
 
         topology.newDRPCStream("words", drpc).each(new Fields("args"), new Split(), new Fields("word")).groupBy(new Fields(
                 "word")).stateQuery(wordCounts, new Fields("word"), new MapGet(), new Fields("count")).each(new Fields("count"),
