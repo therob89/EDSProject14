@@ -15,7 +15,9 @@ import backtype.storm.tuple.Values;
 import storm.trident.TridentState;
 import storm.trident.TridentTopology;
 import storm.trident.operation.BaseFunction;
+import storm.trident.operation.CombinerAggregator;
 import storm.trident.operation.TridentCollector;
+import storm.trident.operation.TridentOperationContext;
 import storm.trident.operation.builtin.Count;
 import storm.trident.operation.builtin.FilterNull;
 import storm.trident.operation.builtin.MapGet;
@@ -33,6 +35,7 @@ import java.util.Map;
 
 public class MyExample {
 
+    /*
      public static class MYFixedBatchSpout implements IBatchSpout {
 
          Fields fields;
@@ -112,7 +115,7 @@ public class MyExample {
              return fields;
          }
 
-     }
+     }*/
     public static class Split extends BaseFunction {
         @Override
         public void execute(TridentTuple tuple, TridentCollector collector) {
@@ -122,9 +125,50 @@ public class MyExample {
             }
         }
     }
+    public static class MyCounter extends BaseFunction{
+
+        int counter;
+        int temp_counter;
+        long start_time;
+        long current_time;
+        public MyCounter(){
+            this.counter = 0;
+            this.temp_counter = 0;
+            //start_time = System.currentTimeMillis();
+        }
+        @Override
+        public void execute(TridentTuple tridentTuple, TridentCollector tridentCollector) {
+            String string = tridentTuple.getString(0);
+            if(this.counter == 0){
+                current_time =start_time = System.currentTimeMillis();
+            }
+            this.temp_counter++;
+            counter = counter+1;
+            System.out.println("Receiving this tuple:" + string);
+            current_time = System.currentTimeMillis();
+            System.out.println("At time"+(current_time-start_time)+" with counter = "+counter);
+            if(this.temp_counter == 10){
+                double sec = (double)(current_time-start_time);
+                sec = sec/1000;
+                System.out.printf("* Sec value :::%.6f \n",sec);
+                if(sec!=0.0) {
+                    System.out.printf("*********Time window elapsed ------>%.4f tuple/s \n", (((double) counter) / sec));
+                }
+                this.temp_counter = 0;
+                //start_time = current_time = System.currentTimeMillis();
+            }
+            tridentCollector.emit(new Values(string));
+        }
+
+        @Override
+        public void cleanup() {
+            System.out.println("-----------------------------This is the clean-up ------------------------------");
+            super.cleanup();
+        }
+    }
 
     public static StormTopology buildTopology(LocalDRPC drpc) {
-        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"), 3,
+        FixedBatchSpout spout = new FixedBatchSpout(new Fields("sentence"), 3,
                 new Values("the cow jumped over the moon"),
                 new Values("the man went to the store and bought some candy"),
                 new Values("four score and seven years ago"),
@@ -133,16 +177,7 @@ public class MyExample {
                 new Values("the man went to the store and bought some candy"),
                 new Values("four score and seven years ago"),
                 new Values("how many apples can you eat"),
-                new Values("prova prova prova abcd"),
-                new Values("the man went to the store and bought some candy"),
-                new Values("four score and seven years ago"),
-                new Values("how many apples can you eat"),
-                new Values("prova prova prova abcd"),
-                new Values("the man went to the store and bought some candy"),
-                new Values("four score and seven years ago"),
-                new Values("how many apples can you eat"),
-                new Values("prova prova prova abcd"),
-                new Values("to be or not to be the person"));
+                new Values("prova prova prova abcd"));
         spout.setCycle(false);
 
         TridentTopology topology = new TridentTopology();
@@ -150,15 +185,18 @@ public class MyExample {
         TridentState wordCounts = topology.newStream("spout1", spout)
                 .parallelismHint(16)
                 .each(new Fields("sentence"), new Split(), new Fields("word"))
-                .groupBy(new Fields("word"))
+                .each(new Fields("word"),new MyCounter(),new Fields("single_word"))
+                .parallelismHint(1)
+                .groupBy(new Fields("single_word"))
                 .persistentAggregate(new MemoryMapState.Factory(), new Count(), new Fields("count"))
                 .parallelismHint(16);
 
+        /*
         topology.newDRPCStream("words", drpc).each(new Fields("args"), new Split(), new Fields("word"))
                 .groupBy(new Fields("word"))
                 .stateQuery(wordCounts, new Fields("word"), new MapGet(), new Fields("count"))
                 .each(new Fields("count"), new FilterNull())
-                .aggregate(new Fields("count"), new Sum(), new Fields("sum"));
+                .aggregate(new Fields("count"), new Sum(), new Fields("sum"));*/
         return topology.build();
     }
 
@@ -166,16 +204,20 @@ public class MyExample {
         Config conf = new Config();
         conf.setMaxSpoutPending(20);
         if (args.length == 0) {
-            LocalDRPC drpc = new LocalDRPC();
+            //LocalDRPC drpc = new LocalDRPC();
             LocalCluster cluster = new LocalCluster();
-            cluster.submitTopology("wordCounter", conf, buildTopology(drpc));
+            cluster.submitTopology("wordCounter", conf, buildTopology(null));
+            /*
             for (int i = 0; i < 3; i++) {
                 long start = System.currentTimeMillis();
                 System.out.println("DRPC RESULT: " + drpc.execute("words", "prova"));
-                System.out.println("Time elapsed ------->"+(System.currentTimeMillis()-start));
+                //System.out.println("Time elapsed ------->"+(System.currentTimeMillis()-start));
                 Thread.sleep(1000);
-            }
-            drpc.shutdown();
+            }*/
+            //drpc.shutdown();
+            cluster.activate("wordCounter");
+            Thread.sleep(10000);
+            cluster.killTopology("wordCounter");
             cluster.shutdown();
         }
         else {
