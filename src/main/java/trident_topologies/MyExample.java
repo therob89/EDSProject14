@@ -12,6 +12,7 @@ import backtype.storm.generated.StormTopology;
 import backtype.storm.task.TopologyContext;
 import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Values;
+import clojure.lang.Obj;
 import storm.trident.TridentState;
 import storm.trident.TridentTopology;
 import storm.trident.operation.BaseFunction;
@@ -27,80 +28,89 @@ import storm.trident.testing.FixedBatchSpout;
 import storm.trident.testing.MemoryMapState;
 import storm.trident.tuple.TridentTuple;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.*;
 
 
 public class MyExample {
 
-    /*
+
      public static class MYFixedBatchSpout implements IBatchSpout {
 
          Fields fields;
-         List<Object>[] outputs;
          int maxBatchSize;
-         long init_time;
-         HashMap<Long, List<List<Object>>> batches = new HashMap<Long, List<List<Object>>>();
-         int myCounter;
-         public MYFixedBatchSpout(Fields fields, int maxBatchSize, List<Object>... outputs) {
-             this.fields = fields;
-             this.outputs = outputs;
-             this.maxBatchSize = maxBatchSize;
-             myCounter = 0;
-             init_time = System.nanoTime();
-         }
-
+         private FileReader fileReader;
+         boolean completed = false;
+         private TopologyContext topologyContext;
+         private List<List<Object>> lineFile;
          int index = 0;
-         boolean cycle = false;
 
-         public void setCycle(boolean cycle) {
-             this.cycle = cycle;
+         HashMap<Long, List<List<Object>>> batches = new HashMap<Long, List<List<Object>>>();
+
+         public MYFixedBatchSpout(Fields fields, int maxBatchSize) {
+             this.fields = fields;
+             this.maxBatchSize = maxBatchSize;
          }
 
          @Override
          public void open(Map conf, TopologyContext context) {
              index = 0;
-         }
+             try {
+                 this.topologyContext = context;
+                 this.fileReader = new FileReader(conf.get("inputFile").toString());
+                 this.lineFile = new ArrayList<List<Object>>();
+                 String str;
+                 BufferedReader reader = new BufferedReader(fileReader);
+                 List<Object> single_line;
+                 while ((str = reader.readLine()) != null) {
+                     single_line = new ArrayList<Object>();
+                     single_line.add(str);
+                     lineFile.add(single_line);
+                 }
 
+
+             } catch (FileNotFoundException e) {
+                 throw new RuntimeException("Error reading file "
+                         + conf.get("inputFile"));
+             }catch (Exception e) {
+                 throw new RuntimeException("Error reading tuple from file", e);
+             }finally {
+                 System.out.println("*****Total lines: "+lineFile.size());
+             }
+         }
          @Override
          public void emitBatch(long batchId, TridentCollector collector) {
              List<List<Object>> batch = this.batches.get(batchId);
              if(batch == null){
                  batch = new ArrayList<List<Object>>();
-                 if(index>=outputs.length && cycle) {
+                 if(index>=lineFile.size()) {
                      index = 0;
                  }
-                 for(int i=0; index < outputs.length && i < maxBatchSize; index++, i++) {
-                     batch.add(outputs[index]);
+                 for(int i=0; index < lineFile.size() && i < maxBatchSize; index++, i++) {
+                     System.out.println("We are adding ----------------->"+lineFile.get(index));
+                     batch.add(lineFile.get(index));
                  }
-                 this.batches.put(batchId, batch
-                 );
+                 this.batches.put(batchId, batch);
              }
              for(List<Object> list : batch){
                  collector.emit(list);
              }
          }
-
          @Override
          public void ack(long batchId) {
-             myCounter+=1;
-             long now = System.nanoTime();
-             System.out.print("******************RECEIVED ACK*******::counter is"+myCounter);
-             if(now-init_time > 1){
-                 System.out.println("Time window elapsed --> "+myCounter/10 +"tuples/ms");
-                 init_time = now;
-
-             }
-             else{
-                 System.out.println("");
-             }
              this.batches.remove(batchId);
          }
 
          @Override
          public void close() {
+             try {
+                 fileReader.close();
+             } catch (IOException e) {
+                 e.printStackTrace();
+             }
          }
 
          @Override
@@ -115,59 +125,93 @@ public class MyExample {
              return fields;
          }
 
-     }*/
+     }
+
+
     public static class Split extends BaseFunction {
         @Override
         public void execute(TridentTuple tuple, TridentCollector collector) {
             String sentence = tuple.getString(0);
+            System.out.println("*******************These are the batch *******"+sentence);
             for (String word : sentence.split(" ")) {
                 collector.emit(new Values(word));
             }
         }
     }
-    public static class MyCounter extends BaseFunction{
 
-        int counter;
-        int temp_counter;
-        long start_time;
-        long current_time;
-        public MyCounter(){
-            this.counter = 0;
-            this.temp_counter = 0;
-            //start_time = System.currentTimeMillis();
+    public static class FixedBatchSpout2 implements IBatchSpout {
+
+        Fields fields;
+        List<Object>[] outputs;
+        int maxBatchSize;
+        HashMap<Long, List<List<Object>>> batches = new HashMap<Long, List<List<Object>>>();
+
+        public FixedBatchSpout2(Fields fields, int maxBatchSize, List<Object>... outputs) {
+            this.fields = fields;
+            this.outputs = outputs;
+            this.maxBatchSize = maxBatchSize;
         }
+
+        int index = 0;
+        boolean cycle = false;
+
+        public void setCycle(boolean cycle) {
+            this.cycle = cycle;
+        }
+
         @Override
-        public void execute(TridentTuple tridentTuple, TridentCollector tridentCollector) {
-            String string = tridentTuple.getString(0);
-            if(this.counter == 0){
-                current_time =start_time = System.currentTimeMillis();
-            }
-            this.temp_counter++;
-            counter = counter+1;
-            System.out.println("Receiving this tuple:" + string);
-            current_time = System.currentTimeMillis();
-            System.out.println("At time"+(current_time-start_time)+" with counter = "+counter);
-            if(this.temp_counter == 10){
-                double sec = (double)(current_time-start_time);
-                sec = sec/1000;
-                System.out.printf("* Sec value :::%.6f \n",sec);
-                if(sec!=0.0) {
-                    System.out.printf("*********Time window elapsed ------>%.4f tuple/s \n", (((double) counter) / sec));
+        public void open(Map conf, TopologyContext context) {
+            index = 0;
+            System.out.println("*********************************OPEN METHOD::::");
+
+
+        }
+
+        @Override
+        public void emitBatch(long batchId, TridentCollector collector) {
+            List<List<Object>> batch = this.batches.get(batchId);
+            if(batch == null){
+                batch = new ArrayList<List<Object>>();
+                if(index>=outputs.length && cycle) {
+                    index = 0;
                 }
-                this.temp_counter = 0;
-                //start_time = current_time = System.currentTimeMillis();
+                for(int i=0; index < outputs.length && i < maxBatchSize; index++, i++) {
+                    System.out.println("We are adding ----------------->"+outputs[index]);
+                    batch.add(outputs[index]);
+                }
+                this.batches.put(batchId, batch);
             }
-            tridentCollector.emit(new Values(string));
+            for(List<Object> list : batch){
+                collector.emit(list);
+            }
         }
 
         @Override
-        public void cleanup() {
-            System.out.println("-----------------------------This is the clean-up ------------------------------");
-            super.cleanup();
+        public void ack(long batchId) {
+            this.batches.remove(batchId);
         }
+
+        @Override
+        public void close() {
+        }
+
+        @Override
+        public Map getComponentConfiguration() {
+            Config conf = new Config();
+            conf.setMaxTaskParallelism(1);
+            return conf;
+        }
+
+        @Override
+        public Fields getOutputFields() {
+            return fields;
+        }
+
     }
 
+
     public static StormTopology buildTopology(LocalDRPC drpc) {
+        /*
         FixedBatchSpout spout = new FixedBatchSpout(new Fields("sentence"), 3,
                 new Values("the cow jumped over the moon"),
                 new Values("the man went to the store and bought some candy"),
@@ -180,14 +224,19 @@ public class MyExample {
                 new Values("prova prova prova abcd"));
         spout.setCycle(false);
 
+        FixedBatchSpout2 spout = new FixedBatchSpout2(new Fields("sentence"), 3,
+                new Values("the cow jumped over the moon"),
+                new Values("the man went to the store and bought some candy"),
+                new Values("four score and seven years ago"),
+                new Values("how many apples can you eat"),
+                new Values("to be or not to be the person"));
+        spout.setCycle(false);*/
+        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"),3);
         TridentTopology topology = new TridentTopology();
-
         TridentState wordCounts = topology.newStream("spout1", spout)
                 .parallelismHint(16)
                 .each(new Fields("sentence"), new Split(), new Fields("word"))
-                .each(new Fields("word"),new MyCounter(),new Fields("single_word"))
-                .parallelismHint(1)
-                .groupBy(new Fields("single_word"))
+                .groupBy(new Fields("word"))
                 .persistentAggregate(new MemoryMapState.Factory(), new Count(), new Fields("count"))
                 .parallelismHint(16);
 
@@ -203,8 +252,14 @@ public class MyExample {
     public static void main(String[] args) throws Exception {
         Config conf = new Config();
         conf.setMaxSpoutPending(20);
-        if (args.length == 0) {
+        if(args.length==0){
+            System.out.println("Insert path to file to process");
+            System.exit(-1);
+        }
+        if (args.length == 1) {
             //LocalDRPC drpc = new LocalDRPC();
+            System.out.println("Input File is ::::::"+args[0]);
+            conf.put("inputFile", args[0]);
             LocalCluster cluster = new LocalCluster();
             cluster.submitTopology("wordCounter", conf, buildTopology(null));
             /*
@@ -215,14 +270,13 @@ public class MyExample {
                 Thread.sleep(1000);
             }*/
             //drpc.shutdown();
-            cluster.activate("wordCounter");
             Thread.sleep(10000);
             cluster.killTopology("wordCounter");
             cluster.shutdown();
         }
         else {
             conf.setNumWorkers(3);
-            StormSubmitter.submitTopologyWithProgressBar(args[0], conf, buildTopology(null));
+            StormSubmitter.submitTopologyWithProgressBar(args[1], conf, buildTopology(null));
         }
     }
 }
