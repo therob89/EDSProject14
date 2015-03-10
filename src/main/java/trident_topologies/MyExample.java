@@ -70,7 +70,8 @@ public class MyExample {
                      single_line.add(str);
                      lineFile.add(single_line);
                  }
-
+                 reader.close();
+                 fileReader.close();
 
              } catch (FileNotFoundException e) {
                  throw new RuntimeException("Error reading file "
@@ -79,15 +80,19 @@ public class MyExample {
                  throw new RuntimeException("Error reading tuple from file", e);
              }finally {
                  System.out.println("*****Total lines: "+lineFile.size());
+
              }
          }
          @Override
          public void emitBatch(long batchId, TridentCollector collector) {
+             System.out.println("BatchID = "+batchId);
              List<List<Object>> batch = this.batches.get(batchId);
              if(batch == null){
                  batch = new ArrayList<List<Object>>();
                  if(index>=lineFile.size()) {
-                     index = 0;
+                     System.out.println("**************With BatchID == "+batchId+" we have reached the end of file!!!");
+                     //index = 0;
+                     return;
                  }
                  for(int i=0; index < lineFile.size() && i < maxBatchSize; index++, i++) {
                      System.out.println("We are adding ----------------->"+lineFile.get(index));
@@ -106,11 +111,7 @@ public class MyExample {
 
          @Override
          public void close() {
-             try {
-                 fileReader.close();
-             } catch (IOException e) {
-                 e.printStackTrace();
-             }
+
          }
 
          @Override
@@ -176,7 +177,6 @@ public class MyExample {
                     index = 0;
                 }
                 for(int i=0; index < outputs.length && i < maxBatchSize; index++, i++) {
-                    System.out.println("We are adding ----------------->"+outputs[index]);
                     batch.add(outputs[index]);
                 }
                 this.batches.put(batchId, batch);
@@ -270,6 +270,10 @@ public class MyExample {
                 Thread.sleep(1000);
             }*/
             //drpc.shutdown();
+
+            /*
+                The number of batch generated are function of the time
+             */
             Thread.sleep(10000);
             cluster.killTopology("wordCounter");
             cluster.shutdown();
