@@ -68,7 +68,7 @@ public class MyExample {
                  while ((str = reader.readLine()) != null) {
                      single_line = new ArrayList<Object>();
                      single_line.add(str);
-                     lineFile.add(single_line);
+                     lineFile.add(new Values((single_line)));
                  }
                  reader.close();
                  fileReader.close();
