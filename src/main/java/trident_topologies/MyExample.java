@@ -43,7 +43,7 @@ public class MyExample {
          Fields fields;
          int maxBatchSize;
          private FileReader fileReader;
-         boolean completed = false;
+         boolean cycle;
          private TopologyContext topologyContext;
          private List<List<Object>> lineFile;
          int index = 0;
@@ -53,6 +53,11 @@ public class MyExample {
          public MYFixedBatchSpout(Fields fields, int maxBatchSize) {
              this.fields = fields;
              this.maxBatchSize = maxBatchSize;
+             this.cycle = false;
+         }
+
+         public void setCycle(boolean v){
+             this.cycle = v;
          }
 
          @Override
@@ -66,9 +71,11 @@ public class MyExample {
                  BufferedReader reader = new BufferedReader(fileReader);
                  List<Object> single_line;
                  while ((str = reader.readLine()) != null) {
-                     single_line = new ArrayList<Object>();
-                     single_line.add(str);
-                     lineFile.add(single_line);
+                     if(str.length() !=0){
+                         single_line = new ArrayList<Object>();
+                         single_line.add(str);
+                         lineFile.add(single_line);
+                     }
                  }
                  reader.close();
                  fileReader.close();
@@ -85,17 +92,16 @@ public class MyExample {
          }
          @Override
          public void emitBatch(long batchId, TridentCollector collector) {
-             System.out.println("BatchID = "+batchId);
+             //System.out.println("BatchID = "+batchId);
              List<List<Object>> batch = this.batches.get(batchId);
              if(batch == null){
                  batch = new ArrayList<List<Object>>();
-                 if(index>=lineFile.size()) {
-                     System.out.println("**************With BatchID == "+batchId+" we have reached the end of file!!!");
+                 if(index>=lineFile.size() && cycle) {
+                     //System.out.println("**************With BatchID == "+batchId+" we have reached the end of file!!!");
                      //index = 0;
-                     return;
+                     index = 0;
                  }
                  for(int i=0; index < lineFile.size() && i < maxBatchSize; index++, i++) {
-                     System.out.println("We are adding ----------------->"+lineFile.get(index));
                      batch.add(lineFile.get(index));
                  }
                  this.batches.put(batchId, batch);
@@ -133,7 +139,7 @@ public class MyExample {
         @Override
         public void execute(TridentTuple tuple, TridentCollector collector) {
             String sentence = tuple.getString(0);
-            System.out.println("*******************These are the batch *******"+sentence);
+            //System.out.println("*******************These are the batch *******"+sentence);
             for (String word : sentence.split(" ")) {
                 collector.emit(new Values(word));
             }
@@ -143,13 +149,17 @@ public class MyExample {
 
     public static StormTopology buildTopology(LocalDRPC drpc) {
 
-        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"),3);
+        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"),800);
+        spout.setCycle(true);
         TridentTopology topology = new TridentTopology();
-        TridentState wordCounts = topology.newStream("spout1", spout)
-                .parallelismHint(16).each(new Fields("sentence"), new Split(), new Fields("word")).groupBy(new Fields("word"))
-                .persistentAggregate(new MemoryMapState.Factory(), new Count(), new Fields("count")).parallelismHint(16);
+        TridentState wordCounts = topology.newStream("spout1", spout).name("MySpoutStream")
+                .parallelismHint(1)
+                .each(new Fields("sentence"), new Split(), new Fields("word")).name("Splitting")
+                .groupBy(new Fields("word")).name("Grouping1")
+                .persistentAggregate(new MemoryMapState.Factory(), new Count(), new Fields("count"))
+                .parallelismHint(20);
+/*
 
-        /*
         topology.newDRPCStream("words", drpc).each(new Fields("args"), new Split(), new Fields("word"))
                 .groupBy(new Fields("word"))
                 .stateQuery(wordCounts, new Fields("word"), new MapGet(), new Fields("count"))
@@ -166,19 +176,16 @@ public class MyExample {
             System.exit(-1);
         }
         if (args.length == 1) {
-            //LocalDRPC drpc = new LocalDRPC();
+            LocalDRPC drpc = new LocalDRPC();
             System.out.println("Input File is ::::::"+args[0]);
             conf.put("inputFile", args[0]);
             LocalCluster cluster = new LocalCluster();
-            cluster.submitTopology("wordCounter", conf, buildTopology(null));
-            /*
-            for (int i = 0; i < 3; i++) {
-                long start = System.currentTimeMillis();
-                System.out.println("DRPC RESULT: " + drpc.execute("words", "prova"));
-                //System.out.println("Time elapsed ------->"+(System.currentTimeMillis()-start));
+            cluster.submitTopology("wordCounter", conf, buildTopology(drpc));
+            for (int i = 0; i < 100; i++) {
+                System.out.println("DRPC RESULT: " + drpc.execute("words","Beatrice Virgilio Dante Farinata Divina"));
                 Thread.sleep(1000);
-            }*/
-            //drpc.shutdown();
+            }
+            drpc.shutdown();
 
             /*
                 The number of batch generated are function of the time
@@ -189,6 +196,7 @@ public class MyExample {
         }
         else {
             conf.setNumWorkers(3);
+            conf.put("inputFile", args[0]);
             StormSubmitter.submitTopologyWithProgressBar(args[1], conf, buildTopology(null));
         }
     }
