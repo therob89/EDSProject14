@@ -101,9 +101,14 @@ public class MyExample {
                      //index = 0;
                      index = 0;
                  }
+                 /*
                  for(int i=0; index < lineFile.size() && i < maxBatchSize; index++, i++) {
                      batch.add(lineFile.get(index));
+                 }*/
+                 for(int i=0;i<maxBatchSize;i++){
+                     batch.add(lineFile.get((i%lineFile.size())));
                  }
+                 System.out.println("*************************** BATCH SIZE:"+batch.size());
                  this.batches.put(batchId, batch);
              }
              for(List<Object> list : batch){
@@ -149,7 +154,7 @@ public class MyExample {
 
     public static StormTopology buildTopology(LocalDRPC drpc) {
 
-        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"),800);
+        MYFixedBatchSpout spout = new MYFixedBatchSpout(new Fields("sentence"),6000);
         spout.setCycle(true);
         TridentTopology topology = new TridentTopology();
         TridentState wordCounts = topology.newStream("spout1", spout).name("MySpoutStream")
@@ -182,7 +187,7 @@ public class MyExample {
             LocalCluster cluster = new LocalCluster();
             cluster.submitTopology("wordCounter", conf, buildTopology(drpc));
             for (int i = 0; i < 100; i++) {
-                System.out.println("DRPC RESULT: " + drpc.execute("words","Beatrice Virgilio Dante Farinata Divina"));
+                //System.out.println("DRPC RESULT: " + drpc.execute("words","Beatrice Virgilio Dante Farinata Divina"));
                 Thread.sleep(1000);
             }
             drpc.shutdown();
